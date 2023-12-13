@@ -64,14 +64,15 @@ local function getTraits()
 	local gt = {};
 	local bt = {};	
 	local tF = TraitFactory.getTraits();
-	
-    for i = 0, tF:size()-1 do
+
+	for i = 0, tF:size()-1 do
 		local t = tF:get(i);	
 		table.insert(t:getCost() >= 0 and gt or bt, t);
-    end;
+	end;
 	
 	--// return shuffled traits
-	return getShuffledTable(gt), getShuffledTable(bt);
+	--return getShuffledTable(gt), getShuffledTable(bt);
+	return gt, bt;
 end;
 
 
@@ -79,51 +80,58 @@ end;
 --// Add random traits to character
 --// Author: Colin J.D. Stewart | Updated: 13.08.2022
 --//
-local function addRandomTraits(player, traits)
+local function addRandomTraits(player, tt)
 	local traitsGood, traitsBad = getTraits();
-	
+		
 	--// we don't care for cost as we want fully unique random characters :)
 	--// but we do want good and bad traits based on last survival
 	--// for now some randomisation
 	local mutual = {};
-	local tt = {};
 	
 	--// default weight
 	local weight = ZombRand(70, 95);
 		
 	--// if you're unlucky to get weak and strong, you will lose your strong trait :)
-	for i = 1, ZombRand(1,5) do		
-		local s = traitsBad[i]:getType();
+	for i = 1, ZombRand(1,5) do
+		local index = ZombRand(1, #traitsBad);
+		local s = traitsBad[index]:getType();
 		
-		if not mutual[s] then		
-			traits:add(s);
-			table.insert(tt, traitsBad[i]);
-			
-			if s == 'Emaciated' then
-				weight = ZombRand(40, 50);
-			elseif s == 'VeryUnderweight' then
-				weight = ZombRand(50, 60);
-			elseif s == 'Underweight' then
-				weight = ZombRand(60, 70);	
-			elseif s == 'Overweight' then
-				weight = ZombRand(95, 105);	
-			elseif s == 'Obese' then
-				weight = ZombRand(105, 140);	
-			end;
-			
-			local e = traitsBad[i]:getMutuallyExclusiveTraits();
-			if e:size() > 0 then		
-				for x = 0, e:size()-1 do 
-					mutual[e:get(x)] = 1;
+		if not tt[s] then 
+			if not mutual[s] then		
+				--table.insert(tt, traitsBad[index]);
+				tt[traitsBad[index]] = 1;
+				
+				if s == 'Emaciated' then
+					weight = ZombRand(40, 50);
+				elseif s == 'VeryUnderweight' then
+					weight = ZombRand(50, 60);
+				elseif s == 'Underweight' then
+					weight = ZombRand(60, 70);	
+				elseif s == 'Overweight' then
+					weight = ZombRand(95, 105);	
+				elseif s == 'Obese' then
+					weight = ZombRand(105, 140);	
+				end;
+				
+				local e = traitsBad[index]:getMutuallyExclusiveTraits();
+				if e:size() > 0 then		
+					for x = 0, e:size()-1 do 
+						mutual[e:get(x)] = 1;
+					end;
 				end;
 			end;
 		end;
 	end;
 	
 	for i = 1, ZombRand(2, 5) do
-		if not mutual[traitsGood[i]:getType()] then
-			traits:add(traitsGood[i]:getType());
-			table.insert(tt, traitsGood[i]);
+		local index = ZombRand(1, #traitsGood);
+		local s = traitsGood[index]:getType();
+		
+		if not tt[s] then
+			if not mutual[s] then
+				tt[traitsGood[index]] = 1;
+				--table.insert(tt, traitsGood[index]);
+			end;
 		end;
 	end;	
 	
@@ -137,7 +145,7 @@ end;
 --// Set a random profession
 --// Author: Colin J.D. Stewart | Updated: 16.08.2022
 --//
-local function setRandomProfession(player, traits)
+local function setRandomProfession(player, tt)
 	local professions = ProfessionFactory.getProfessions();
 	local p = professions:get(ZombRand(professions:size()));
 	
@@ -146,7 +154,11 @@ local function setRandomProfession(player, traits)
 	--//add the traits from this profession
 	for i=1, p:getFreeTraits():size() do
 		local freeTrait = TraitFactory.getTrait(p:getFreeTraits():get(i-1));
-		traits:add(freeTrait:getType());
+		
+		if not tt[freeTrait] then
+			tt[freeTrait] = 1;
+			--table.insert(tt, freeTrait);
+		end;
 	end;
 	
 	return p;
@@ -215,14 +227,22 @@ local onCreatePlayer = function(playerIndex, player)
 
 		if playerData.rating == nil then playerData.rating = 0.5; end;
 		
+		local tt = {};		
+		
 		local traits = player:getCharacterTraits();
 		traits:clear();	--// lets make sure there are none to begin with (in case for some reason client is able to select some)
 		
 		clearSkills(player);
-		local tt = addRandomTraits(player, traits);	
-		local p = setRandomProfession(player, traits);
-		
+		local p = setRandomProfession(player, tt);		
+		local tt = addRandomTraits(player, tt);	
+			
 		setLevels(player, p, tt);
+		
+		--// now add the traits
+		for t, _ in pairs(tt) do
+			traits:add(t:getType());
+		end;
+		
 		playerData.spawn = true;
 		
 		print('Player rating = '..tostring(playerData.rating));
