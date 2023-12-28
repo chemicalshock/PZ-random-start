@@ -1,33 +1,22 @@
 --[[
-
-
-	A lot of this should be server side only, but cheaters only spoil their own gameplay...
-
-
-]]
-
---//
---// Return a shuffled table
---// Author: Colin J.D. Stewart | Updated: 13.08.2022
---//
-local function getShuffledTable(t)	
-	local r = {};
-	for i = 0, #t-1 do
-		r[i+1] = t[i+1];
-	end;
-		
-	for i = #r, 2, -1 do
-		local j = ZombRand(i);
-		r[i], r[j] = r[j], r[i];
-	end;
+	A mod to generate a random character on next re-spawn
 	
-	return r;
-end;
+	Colin J.D. Stewart (c) 2022-2023
+	
+	History:
+	2023.12.13		
+	- Fixed error causing respawn with no traits. Reported by Cluster.
+	- Fixes occasionally traits were duplicated due to profession.
+	- Minor optimisation.
+	2023.12.28
+	- Fixed mutually exclusive traits being added. Reported by LaggyVORTEX.
+	- Changed where exclusive traits are removed.
+	- Adding mod to existing save won't clear player traits. Reported by HefeweizeNecronomicon.	
+]]
 
 
 --//
 --// Return simple BMI, may use this later
---// Author: Colin J.D. Stewart | Updated: 13.08.2022
 --//
 local function calcBMI(height, weight)
 	return weight / math.sqrt(height);
@@ -37,7 +26,6 @@ end;
 
 --//
 --// Clear all skills and xp
---// Author: Colin J.D. Stewart | Updated: 15.08.2022
 --// 
 local function clearSkills(player)
 	local pl = PerkFactory.PerkList;
@@ -58,7 +46,6 @@ end;
 
 --//
 --// Get the trait tables from the TraitFactory
---// Author: Colin J.D. Stewart | Updated: 13.08.2022
 --// 
 local function getTraits()
 	local gt = {};
@@ -71,7 +58,6 @@ local function getTraits()
 	end;
 	
 	--// return shuffled traits
-	--return getShuffledTable(gt), getShuffledTable(bt);
 	return gt, bt;
 end;
 
@@ -86,7 +72,6 @@ local function addRandomTraits(player, tt)
 	--// we don't care for cost as we want fully unique random characters :)
 	--// but we do want good and bad traits based on last survival
 	--// for now some randomisation
-	local mutual = {};
 	
 	--// default weight
 	local weight = ZombRand(70, 95);
@@ -97,28 +82,18 @@ local function addRandomTraits(player, tt)
 		local s = traitsBad[index]:getType();
 		
 		if not tt[s] then 
-			if not mutual[s] then		
-				--table.insert(tt, traitsBad[index]);
-				tt[traitsBad[index]] = 1;
-				
-				if s == 'Emaciated' then
-					weight = ZombRand(40, 50);
-				elseif s == 'VeryUnderweight' then
-					weight = ZombRand(50, 60);
-				elseif s == 'Underweight' then
-					weight = ZombRand(60, 70);	
-				elseif s == 'Overweight' then
-					weight = ZombRand(95, 105);	
-				elseif s == 'Obese' then
-					weight = ZombRand(105, 140);	
-				end;
-				
-				local e = traitsBad[index]:getMutuallyExclusiveTraits();
-				if e:size() > 0 then		
-					for x = 0, e:size()-1 do 
-						mutual[e:get(x)] = 1;
-					end;
-				end;
+			tt[traitsBad[index]] = 1;
+			
+			if s == 'Emaciated' then
+				weight = ZombRand(40, 50);
+			elseif s == 'VeryUnderweight' then
+				weight = ZombRand(50, 60);
+			elseif s == 'Underweight' then
+				weight = ZombRand(60, 70);	
+			elseif s == 'Overweight' then
+				weight = ZombRand(95, 105);	
+			elseif s == 'Obese' then
+				weight = ZombRand(105, 140);	
 			end;
 		end;
 	end;
@@ -128,10 +103,7 @@ local function addRandomTraits(player, tt)
 		local s = traitsGood[index]:getType();
 		
 		if not tt[s] then
-			if not mutual[s] then
-				tt[traitsGood[index]] = 1;
-				--table.insert(tt, traitsGood[index]);
-			end;
+			tt[traitsGood[index]] = 1;
 		end;
 	end;	
 	
@@ -143,7 +115,6 @@ end;
 
 --//
 --// Set a random profession
---// Author: Colin J.D. Stewart | Updated: 16.08.2022
 --//
 local function setRandomProfession(player, tt)
 	local professions = ProfessionFactory.getProfessions();
@@ -167,7 +138,6 @@ end;
 
 --//
 --// Set skill levels based on profession and perks
---// Author: Colin J.D. Stewart | Updated: 16.08.2022
 --//
 local function setLevels(player, profession, traits)
 	local xp = player:getXp();
@@ -207,7 +177,6 @@ end;
 
 --//
 --// Generate random character
---// Author: Colin J.D. Stewart | Updated: 13.08.2022
 --//
 local function randomiseCharacter(player)
 	--// hmm, not needed as pz does this anyway....
@@ -223,9 +192,13 @@ local onCreatePlayer = function(playerIndex, player)
 		
 	if playerIndex == 0 then
 		local playerData = player:getModData();
-		if playerData.spawn == true then return end;
+		if playerData.spawn == true or player:getHoursSurvived() ~= 0 then
+			return
+		end;
 
-		if playerData.rating == nil then playerData.rating = 0.5; end;
+		if playerData.rating == nil then
+			playerData.rating = 0.5;
+		end;
 		
 		local tt = {};		
 		
@@ -239,8 +212,17 @@ local onCreatePlayer = function(playerIndex, player)
 		setLevels(player, p, tt);
 		
 		--// now add the traits
-		for t, _ in pairs(tt) do
-			traits:add(t:getType());
+		for t, v in pairs(tt) do
+			if v == 1 then
+				local e = t:getMutuallyExclusiveTraits();
+				if e:size() > 0 then		
+					for x = 0, e:size()-1 do 
+						tt[e:get(x)] = 0;
+					end;
+				end;
+					
+				traits:add(t:getType());
+			end;
 		end;
 		
 		playerData.spawn = true;
